@@ -1,0 +1,46 @@
+# Multi-agent metrics trigger harness container image for alpha testing
+# Build from the repository root:
+#   docker build -f instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual/deploy/Dockerfile.alpha \
+#       -t metrics-trigger-alpha .
+
+FROM python:3.13-slim
+
+ENV APP_HOME=/app \
+    PYTHONUNBUFFERED=1
+
+WORKDIR ${APP_HOME}
+
+# System tooling for curl/health checks and timezone awareness
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only the directories needed for editable installs
+COPY instrumentation-genai ${APP_HOME}/instrumentation-genai
+COPY util ${APP_HOME}/util
+
+WORKDIR ${APP_HOME}/instrumentation-genai/opentelemetry-instrumentation-langchain/examples/manual
+
+# Drop any developer .env that might be present to avoid baking secrets into the image
+RUN rm -f .env
+
+# Install local packages in the same order as the documented manual steps
+RUN python -m venv .venv \
+    && . .venv/bin/activate \
+    && pip install --upgrade pip \
+    && pip install --no-deps -e ../../../../util/opentelemetry-util-genai \
+    && pip install --no-deps -e ../../../../util/opentelemetry-util-genai-emitters-splunk \
+    && pip install --no-deps -e ../../../../util/opentelemetry-util-genai-evals \
+    && pip install -e ../../../../util/opentelemetry-util-genai-evals-deepeval \
+    && pip install -e ../../../../instrumentation-genai/opentelemetry-instrumentation-langchain
+
+# Install any extra third-party dependencies for the manual harness
+RUN . .venv/bin/activate \
+    && pip install -r requirements.txt
+
+# Default environment can be overridden at runtime
+ENV TEST_MODE=single \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+
+# Entrypoint keeps the interval configurable via RUN_INTERVAL_SECONDS
+CMD ["/bin/bash", "run_agent_script.sh"]

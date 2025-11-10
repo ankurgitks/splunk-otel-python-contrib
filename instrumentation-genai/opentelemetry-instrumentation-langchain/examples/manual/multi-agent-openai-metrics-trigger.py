@@ -216,7 +216,7 @@ def run_scenario(scenario, llm, scenario_index) -> None:
                 raw_answer = str(result1)
 
             print(f" ✓ ({len(raw_answer)} chars)")
-
+            
             # Step 2: Agent 2 formats the problematic response
             print("⏳ Agent 2 (Formatter) processing...", end="", flush=True)
             formatting_prompt = f"""Original Question: {scenario['question']}
@@ -286,23 +286,37 @@ def main():
     print(f"🧪 Test Scenarios: {len(TEST_SCENARIOS)}")
     
     # Determine which scenario to run (cycle through them, or run all)
-    run_mode = os.getenv('TEST_MODE', 'single')  # 'single' or 'all'
-    
+    run_mode = os.getenv('TEST_MODE', 'single').strip().lower()  # 'single' or 'all'
+
+    scenario_override_raw = os.getenv('SCENARIO_INDEX')
+    scenario_override = None
+    if scenario_override_raw is not None:
+        try:
+            scenario_override = int(scenario_override_raw)
+        except ValueError:
+            logger.warning("Invalid SCENARIO_INDEX=%s, ignoring override", scenario_override_raw)
+
     if run_mode == 'all':
         scenarios_to_run = TEST_SCENARIOS
         print(f"🔄 Mode: Running ALL {len(TEST_SCENARIOS)} scenarios")
     else:
-        # Rotate through scenarios based on timestamp
-        scenario_index = int(time.time() / 300) % len(TEST_SCENARIOS)  # Change every 5 minutes
+        if scenario_override is not None and 0 <= scenario_override < len(TEST_SCENARIOS):
+            scenario_index = scenario_override
+            print(
+                f"🔄 Mode: Running fixed scenario {scenario_index + 1}/{len(TEST_SCENARIOS)} "
+                "(SCENARIO_INDEX override)"
+            )
+        else:
+            scenario_index = int(time.time() / 300) % len(TEST_SCENARIOS)
+            print(f"🔄 Mode: Running scenario {scenario_index + 1}/{len(TEST_SCENARIOS)}")
         scenarios_to_run = [TEST_SCENARIOS[scenario_index]]
-        print(f"🔄 Mode: Running scenario {scenario_index + 1}/{len(TEST_SCENARIOS)}")
     
     print("=" * 80 + "\n")
     
     # Create shared LLM instance
     llm = ChatOpenAI(
         model=model_name,
-        temperature=0.7,  # Higher temperature for more varied problematic responses
+        temperature=0.0,  # Deterministic responses keep instrumentation output stable
     )
     
     # Run selected scenarios
